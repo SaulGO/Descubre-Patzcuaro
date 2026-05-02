@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Pátzcuaro — Mapa del Explorador</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --tierra: #7B3F1A;
+    --barro: #C47B3A;
+    --crema: #F5EDD6;
+    --lago: #2A7DA6;
+    --lago-oscuro: #1A4E6A;
+    --verde: #3A6B4A;
+    --noche: #0E0A05;
+    --dorado: #D4A843;
+    --dorado-claro: #F0C96A;
+    --card-bg: rgba(14,10,5,0.92);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  html, body {
+    width:100%; height:100%;
+    font-family:'Nunito', sans-serif;
+    background: var(--noche);
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  #header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 1000;
+    height: 56px;
+    background: linear-gradient(135deg, rgba(14,10,5,0.97) 0%, rgba(30,18,8,0.97) 100%);
+    border-bottom: 1px solid rgba(212,168,67,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1rem;
+    backdrop-filter: blur(10px);
+  }
+
+  #header .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  #header .logo-icon {
+    width: 36px; height: 36px;
+    background: radial-gradient(circle at 30% 30%, var(--dorado-claro), var(--barro));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 0 12px rgba(212,168,67,0.5);
+    animation: pulseGlow 3s infinite;
+  }
+
+  #header h1 {
+    font-family: 'Cinzel', serif;
+    font-size: 1rem;
+    color: var(--dorado);
+    letter-spacing: 0.05em;
+    line-height: 1.1;
+  }
+
+  #header h1 span {
+    display: block;
+    font-size: 0.55rem;
+    color: rgba(212,168,67,0.5);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+
+  #counter {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.5);
+    text-align: right;
+    line-height: 1.4;
+  }
+
+  #counter strong {
+    color: var(--dorado);
+    font-size: 1rem;
+    display: block;
+  }
+
+  /* ── MAP ── */
+  #map {
+    position: fixed;
+    top: 56px; left: 0; right: 0;
+    bottom: 0;
+    z-index: 1;
+  }
+
+  /* Custom Leaflet tiles styling */
+  .leaflet-tile-pane { filter: saturate(1.1) brightness(0.95); }
+
+  /* ── MARKER PINS ── */
+  .poi-pin {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .pin-outer {
+    width: 44px; height: 44px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5), 0 0 0 3px rgba(255,255,255,0.15);
+    transition: transform 0.2s, box-shadow 0.2s;
+    animation: pinFloat 3s ease-in-out infinite;
+  }
+
+  .pin-outer:hover {
+    transform: rotate(-45deg) scale(1.2);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.6), 0 0 20px currentColor;
+  }
+
+  .pin-inner {
+    transform: rotate(45deg);
+    font-size: 1.3rem;
+    line-height: 1;
+  }
+
+  .pin-pulse {
+    position: absolute;
+    bottom: -4px; left: 50%;
+    transform: translateX(-50%);
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    animation: pingPulse 2s infinite;
+  }
+
+  /* Pin colors by category */
+  .cat-plaza .pin-outer   { background: linear-gradient(135deg, #C47B3A, #8B4A1A); color: rgba(212,168,67,0.8); }
+  .cat-plaza .pin-pulse   { background: #C47B3A; }
+  .cat-iglesia .pin-outer { background: linear-gradient(135deg, #7B5EA7, #4A3070); }
+  .cat-iglesia .pin-pulse { background: #7B5EA7; }
+  .cat-cultura .pin-outer { background: linear-gradient(135deg, #2A7DA6, #1A4E6A); }
+  .cat-cultura .pin-pulse { background: #2A7DA6; }
+  .cat-natura .pin-outer  { background: linear-gradient(135deg, #3A7A4A, #1F4A2A); }
+  .cat-natura .pin-pulse  { background: #3A7A4A; }
+  .cat-lago .pin-outer    { background: linear-gradient(135deg, #1A9ECC, #0D6A8A); }
+  .cat-lago .pin-pulse    { background: #1A9ECC; }
+
+  /* ── DETAIL CARD (bottom sheet) ── */
+  #detail-card {
+    position: fixed;
+    bottom: -100%;
+    left: 0; right: 0;
+    z-index: 2000;
+    background: var(--card-bg);
+    border-top: 1px solid rgba(212,168,67,0.25);
+    border-radius: 24px 24px 0 0;
+    padding: 0 1.2rem 2rem;
+    transition: bottom 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    backdrop-filter: blur(20px);
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  #detail-card.open { bottom: 0; }
+
+  .card-handle {
+    width: 40px; height: 4px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+    margin: 12px auto 16px;
+  }
+
+  .card-category {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.8rem;
+    border-radius: 20px;
+    display: inline-block;
+    margin-bottom: 0.7rem;
+  }
+
+  .card-name {
+    font-family: 'Cinzel', serif;
+    font-size: 1.4rem;
+    color: var(--dorado);
+    margin-bottom: 0.3rem;
+    line-height: 1.2;
+  }
+
+  .card-subtitle {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+  }
+
+  .card-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(212,168,67,0.3), transparent);
+    margin: 0.8rem 0;
+  }
+
+  .card-desc {
+    font-size: 0.88rem;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.8;
+    margin-bottom: 1rem;
+  }
+
+  .card-tip {
+    background: rgba(212,168,67,0.08);
+    border: 1px solid rgba(212,168,67,0.2);
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+    font-size: 0.82rem;
+    color: var(--dorado-claro);
+    line-height: 1.6;
+    margin-bottom: 1rem;
+  }
+
+  .card-tip::before {
+    content: '💡 ';
+  }
+
+  .card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .meta-chip {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.6);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .btn-close {
+    width: 100%;
+    padding: 0.9rem;
+    border: 1px solid rgba(212,168,67,0.3);
+    background: rgba(212,168,67,0.1);
+    color: var(--dorado);
+    border-radius: 14px;
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-close:hover {
+    background: rgba(212,168,67,0.2);
+  }
+
+  /* ── LEGEND ── */
+  #legend {
+    position: fixed;
+    bottom: 16px; right: 12px;
+    z-index: 500;
+    background: rgba(14,10,5,0.9);
+    border: 1px solid rgba(212,168,67,0.2);
+    border-radius: 14px;
+    padding: 0.8rem;
+    backdrop-filter: blur(10px);
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.6);
+    min-width: 130px;
+  }
+
+  #legend h4 {
+    font-family: 'Cinzel', serif;
+    font-size: 0.7rem;
+    color: var(--dorado);
+    letter-spacing: 0.1em;
+    margin-bottom: 0.6rem;
+    text-transform: uppercase;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── OVERLAY for backdrop ── */
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1999;
+    background: rgba(0,0,0,0.5);
+  }
+
+  #overlay.active { display: block; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed;
+    top: 70px; left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: var(--dorado);
+    color: var(--noche);
+    padding: 0.5rem 1.2rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    z-index: 3000;
+    opacity: 0;
+    transition: all 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 12px rgba(212,168,67,0.5); }
+    50%       { box-shadow: 0 0 24px rgba(212,168,67,0.9); }
+  }
+
+  @keyframes pinFloat {
+    0%, 100% { margin-top: 0; }
+    50%       { margin-top: -5px; }
+  }
+
+  @keyframes pingPulse {
+    0%   { transform: translateX(-50%) scale(1); opacity: 0.8; }
+    100% { transform: translateX(-50%) scale(3); opacity: 0; }
+  }
+
+  /* Leaflet overrides */
+  .leaflet-popup { display: none !important; }
+  .leaflet-control-attribution { font-size: 9px !important; }
+  .leaflet-control-zoom {
+    border: none !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3) !important;
+  }
+  .leaflet-control-zoom a {
+    background: rgba(14,10,5,0.92) !important;
+    color: var(--dorado) !important;
+    border-color: rgba(212,168,67,0.25) !important;
+    width: 36px !important; height: 36px !important;
+    line-height: 36px !important; font-size: 1.1rem !important;
+  }
+  .leaflet-tile-pane { filter: saturate(0.85) brightness(1.02); }
+
+  .pin-label {
+    position: absolute;
+    top: 52px; left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: 'Nunito', sans-serif;
+    font-size: 10px; font-weight: 700;
+    color: #fff;
+    background: rgba(14,10,5,0.82);
+    border: 1px solid rgba(212,168,67,0.35);
+    border-radius: 6px;
+    padding: 2px 6px;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    max-width: 110px;
+    overflow: hidden; text-overflow: ellipsis; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">
+    <div class="logo-icon">🦋</div>
+    <h1>Pátzcuaro<span>Mapa del Explorador</span></h1>
+  </div>
+  <div id="counter">
+    <strong id="visited-count">0</strong>
+    <span>de 11 visitados</span>
+  </div>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- LEGEND -->
+<div id="legend">
+  <h4>Categorías</h4>
+  <div class="legend-item"><div class="legend-dot" style="background:#C47B3A"></div> Plazas</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7B5EA7"></div> Iglesias</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2A7DA6"></div> Cultura</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3A7A4A"></div> Miradores</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1A9ECC"></div> Lago / Isla</div>
+</div>
+
+<!-- OVERLAY -->
+<div id="overlay" onclick="closeCard()"></div>
+
+<!-- DETAIL CARD -->
+<div id="detail-card">
+  <div class="card-handle"></div>
+  <div id="card-content"></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────
+const lugares = [
+  {
+    id: 1,
+    nombre: "Plaza Vasco de Quiroga",
+    subtitulo: "La Plaza Grande · Corazón de Pátzcuaro",
+    cat: "plaza",
+    catLabel: "Plaza Principal",
+    catColor: "#C47B3A",
+    emoji: "⛩",
+    lat: 19.5155, lng: -101.6096,
+    desc: "Una de las plazas más grandes y hermosas del país, rodeada de portales coloniales del siglo XVI. En el centro se erige la estatua de Don Vasco de Quiroga, el primer obispo de Michoacán, protector de los pueblos purépechas. Los portales albergan artesanías auténticas: madera lacada, rebozos, barro negro y tejidos.",
+    tip: "Los fines de semana hay músicos locales y el ambiente se llena de vida. Regatear amablemente es bien recibido en los portales.",
+    meta: ["📍 Centro histórico", "💰 Acceso libre", "🕘 Todo el día"]
+  },
+  {
+    id: 2,
+    nombre: "Basílica de Nuestra Señora de la Salud",
+    subtitulo: "Santuario del siglo XVI · Patrona de Pátzcuaro",
+    cat: "iglesia",
+    catLabel: "Iglesia",
+    catColor: "#7B5EA7",
+    emoji: "⛪",
+    lat: 19.5163, lng: -101.6081,
+    desc: "Uno de los templos más venerados de Michoacán. Guarda los restos de Don Vasco de Quiroga en su altar mayor. La imagen de la Virgen está hecha con pasta de caña de maíz, técnica prehispánica purépecha única en el mundo. Cada 8 de diciembre es destino de peregrinación desde toda la región.",
+    tip: "Entra en silencio y respeta las misas. La arquitectura del interior en piedra volcánica negra es impresionante.",
+    meta: ["📍 Junto a Plaza Grande", "💰 Acceso libre", "🕘 7am – 8pm"]
+  },
+  {
+    id: 3,
+    nombre: "Casa de los Once Patios",
+    subtitulo: "Ex convento dominico · Centro artesanal",
+    cat: "cultura",
+    catLabel: "Cultura & Arte",
+    catColor: "#2A7DA6",
+    emoji: "🏺",
+    lat: 19.5148, lng: -101.6073,
+    desc: "Antiguo convento dominico del siglo XVIII convertido en el centro artesanal más importante de Pátzcuaro. Sus once patios albergan talleres activos donde artesanos crean y venden objetos de madera lacada, cobre, textiles y cerámica. Es el mejor lugar para comprar artesanía auténtica directamente al creador.",
+    tip: "Visita los talleres abiertos donde puedes ver a los artesanos trabajar en tiempo real. Pide que te expliquen el proceso — son muy amables.",
+    meta: ["📍 A 2 cuadras de Plaza Grande", "💰 Acceso libre", "🕘 10am – 6pm"]
+  },
+  {
+    id: 4,
+    nombre: "Isla de Janitzio",
+    subtitulo: "Corazón del Lago · Cultura Purépecha",
+    cat: "lago",
+    catLabel: "Lago & Isla",
+    catColor: "#1A9ECC",
+    emoji: "🏝",
+    lat: 19.5305, lng: -101.6183,
+    desc: "La isla más emblemática del lago de Pátzcuaro, habitada por la comunidad purépecha. Sus calles empedradas y empinadas suben hasta el Monumento a Morelos, estatua de 47 metros desde cuyo puño hay vistas panorámicas del lago. Durante el Día de Muertos se ilumina con miles de cirios creando uno de los espectáculos más místicos de México.",
+    tip: "Ve temprano — la mañana tiene niebla sobre el lago que es absolutamente fotogénica. De ida, los pescadores hacen demostraciones de pesca con redes de mariposa.",
+    meta: ["⛵ Lancha desde el Muelle General", "💰 ~$100 pesos ida y vuelta", "🕘 9am – 6pm"]
+  },
+  {
+    id: 5,
+    nombre: "Mirador El Estribo Grande",
+    subtitulo: "La mejor vista del lago · 2,740 msnm",
+    cat: "natura",
+    catLabel: "Mirador",
+    catColor: "#3A7A4A",
+    emoji: "🏔",
+    lat: 19.5112, lng: -101.6280,
+    desc: "El mirador más alto de la región. Tras subir aproximadamente 400 escaleras rodeadas de bosque de pinos, la recompensa es una vista de 360° del lago de Pátzcuaro completo, las islas y los volcanes lejanos. La caminata en sí es una experiencia natural hermosa.",
+    tip: "Sube al amanecer o al atardecer para la mejor luz. Lleva agua y chamarra — hace frío en la cima. El ejercicio vale cada paso.",
+    meta: ["🚗 5 min del centro en auto", "💰 Acceso libre", "🌅 Mejor al amanecer"]
+  },
+  {
+    id: 6,
+    nombre: "Mirador El Estribo Chico",
+    subtitulo: "Vista panorámica intermedia · Acceso fácil",
+    cat: "natura",
+    catLabel: "Mirador",
+    catColor: "#3A7A4A",
+    emoji: "🌄",
+    lat: 19.5140, lng: -101.6220,
+    desc: "Una alternativa más accesible al Estribo Grande. Ofrece vistas igualmente hermosas del lago desde una altura menor, ideal para quienes no quieren la caminata larga. Es un punto de descanso con bancos y vegetación de pino y encino.",
+    tip: "Perfecto si vas con niños pequeños o personas mayores. La vista del lago al atardecer desde aquí es de las más bonitas de Pátzcuaro.",
+    meta: ["🚗 3 min del centro", "💰 Acceso libre", "🕘 Todo el día"]
+  },
+  {
+    id: 7,
+    nombre: "Plaza Gertrudis Bocanegra",
+    subtitulo: "La Plaza Chica · Mercado y vida local",
+    cat: "plaza",
+    catLabel: "Plaza",
+    catColor: "#C47B3A",
+    emoji: "🏛",
+    lat: 19.5168, lng: -101.6108,
+    desc: "La plaza más animada del día a día en Pátzcuaro. Rodeada de puestos de comida, mercado local y la Biblioteca Pública que tiene un mural de Juan O'Gorman sobre la historia de Michoacán. Nombrada en honor a Gertrudis Bocanegra, heroína michoacana de la Independencia.",
+    tip: "Ven en la mañana para desayunar en los puestos locales: corundas con atole, churipo o pozole purépecha a precios de mercado.",
+    meta: ["📍 A 2 cuadras de Plaza Grande", "💰 Acceso libre", "🕘 6am – 9pm"]
+  },
+  {
+    id: 8,
+    nombre: "Plaza de San Francisco",
+    subtitulo: "Atrio colonial · Ambiente tranquilo",
+    cat: "plaza",
+    catLabel: "Plaza",
+    catColor: "#C47B3A",
+    emoji: "🌿",
+    lat: 19.5175, lng: -101.6065,
+    desc: "Una de las plazas más tranquilas del centro histórico, frente al templo franciscano. Con árboles centenarios y bancas de piedra, es ideal para descansar durante el recorrido por el centro. El templo adyacente data del siglo XVI y tiene una fachada de piedra volcánica característica.",
+    tip: "Es la plaza menos turística del centro, lo que la hace perfecta para descansar y observar la vida local auténtica.",
+    meta: ["📍 Norte del centro histórico", "💰 Acceso libre", "🕘 Todo el día"]
+  },
+  {
+    id: 9,
+    nombre: "Templo y Colegio de la Compañía de Jesús",
+    subtitulo: "Arquitectura jesuita · Siglo XVII",
+    cat: "iglesia",
+    catLabel: "Templo Histórico",
+    catColor: "#7B5EA7",
+    emoji: "🕍",
+    lat: 19.5152, lng: -101.6088,
+    desc: "Imponente conjunto arquitectónico jesuita del siglo XVII. El templo tiene una de las fachadas de piedra más elaboradas del centro histórico de Pátzcuaro. El antiguo colegio adyacente hoy alberga usos culturales. Es un ejemplo magistral de la arquitectura religiosa novohispana en Michoacán.",
+    tip: "Fíjate en los detalles de la fachada tallada en piedra — hay figuras y símbolos jesuitas que muy pocos turistas notan.",
+    meta: ["📍 Centro histórico", "💰 Acceso libre al exterior", "🕘 8am – 7pm"]
+  },
+  {
+    id: 10,
+    nombre: "Museo de Artes e Industrias Populares",
+    subtitulo: "Artesanía purépecha · Patrimonio vivo",
+    cat: "cultura",
+    catLabel: "Museo",
+    catColor: "#2A7DA6",
+    emoji: "🎨",
+    lat: 19.5158, lng: -101.6076,
+    desc: "Instalado en el antiguo Colegio de San Luis, este museo exhibe la riqueza artesanal de la región purépecha: lacas de Uruapan, cobre de Santa Clara, textiles de Paracho, cerámica de Tzintzuntzan y mucho más. Una ventana completa a la herencia cultural de Michoacán.",
+    tip: "La tienda del museo vende artesanías de alta calidad con precio fijo — buena opción si quieres piezas de colección sin regatear.",
+    meta: ["📍 Av. Enseñanza s/n", "💰 $30 pesos aprox.", "🕘 9am – 5pm (Lun–Sab)"]
+  },
+  {
+    id: 11,
+    nombre: "Muelle General",
+    subtitulo: "Puerta al lago · Embarcadero principal",
+    cat: "lago",
+    catLabel: "Lago & Muelle",
+    catColor: "#1A9ECC",
+    emoji: "⚓",
+    lat: 19.5235, lng: -101.6128,
+    desc: "El punto de partida para todas las aventuras en el lago de Pátzcuaro. Desde aquí salen las lanchas a Janitzio, Yunuen, Pacanda y otras islas. En el embarcadero hay puestos de comida con vistas al lago y artesanías. Por las mañanas los pescadores regresan con la pesca del día.",
+    tip: "Los fines de semana los pescadores hacen demostraciones de la pesca tradicional con redes de mariposa desde sus barcas. Llega temprano para verlos.",
+    meta: ["🚗 5 min del centro", "⛵ Lanchas: 9am – 6pm", "💰 Entrada libre al muelle"]
+  }
+];
+
+// ── VISITED TRACKING ──────────────────────────────────────────────────────
+const visited = new Set();
+
+// ── MAP INIT ──────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [19.5175, -101.6115],
+  zoom: 16,
+  zoomControl: true,
+  attributionControl: true,
+  zoomSnap: 0.25,
+  minZoom: 14,
+  maxZoom: 19
+});
+
+// CartoDB Voyager — clean, Google Maps-like style with street names in Spanish
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+  subdomains: 'abcd',
+  maxZoom: 19
+}).addTo(map);
+
+// ── CREATE CUSTOM MARKERS ─────────────────────────────────────────────────
+function createIcon(lugar) {
+  // Short label: first meaningful words, max ~16 chars
+  const shortName = lugar.nombre.length > 18
+    ? lugar.nombre.replace(/^(Plaza|Basílica de|Templo y Colegio de la|Museo de Artes e Industrias|Mirador El|Muelle|Casa de los|Isla de)\s*/i, '').split(' ').slice(0,3).join(' ')
+    : lugar.nombre;
+
+  const html = `
+    <div class="poi-pin cat-${lugar.cat}" style="position:relative;width:44px;">
+      <div class="pin-outer">
+        <div class="pin-inner">${lugar.emoji}</div>
+      </div>
+      <div class="pin-pulse"></div>
+      <div class="pin-label">${shortName}</div>
+    </div>
+  `;
+  return L.divIcon({
+    html,
+    className: '',
+    iconSize: [44, 72],
+    iconAnchor: [22, 50],
+    popupAnchor: [0, -70]
+  });
+}
+
+// Add markers
+lugares.forEach((lugar, i) => {
+  const marker = L.marker([lugar.lat, lugar.lng], {
+    icon: createIcon(lugar),
+    zIndexOffset: 100 + i
+  }).addTo(map);
+
+  marker.on('click', () => openCard(lugar));
+});
+
+// ── CARD LOGIC ────────────────────────────────────────────────────────────
+let currentLugar = null;
+
+function openCard(lugar) {
+  currentLugar = lugar;
+
+  // Mark as visited
+  if (!visited.has(lugar.id)) {
+    visited.add(lugar.id);
+    document.getElementById('visited-count').textContent = visited.size;
+    showToast(`¡${lugar.nombre} descubierto! 🎉`);
+  }
+
+  // Pan map to marker (offset upward so card doesn't cover it)
+  map.panTo([lugar.lat - 0.003, lugar.lng], { animate: true, duration: 0.5 });
+
+  // Build card content
+  const metaChips = lugar.meta.map(m => `<div class="meta-chip">${m}</div>`).join('');
+
+  document.getElementById('card-content').innerHTML = `
+    <div class="card-category" style="background:${lugar.catColor}22; color:${lugar.catColor}; border: 1px solid ${lugar.catColor}44">
+      ${lugar.catLabel}
+    </div>
+    <div class="card-name">${lugar.nombre}</div>
+    <div class="card-subtitle">${lugar.subtitulo}</div>
+    <div class="card-divider"></div>
+    <div class="card-desc">${lugar.desc}</div>
+    <div class="card-tip">${lugar.tip}</div>
+    <div class="card-meta">${metaChips}</div>
+    <button class="btn-close" onclick="closeCard()">Cerrar</button>
+  `;
+
+  document.getElementById('detail-card').classList.add('open');
+  document.getElementById('overlay').classList.add('active');
+}
+
+function closeCard() {
+  document.getElementById('detail-card').classList.remove('open');
+  document.getElementById('overlay').classList.remove('active');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+// ── SWIPE TO CLOSE ────────────────────────────────────────────────────────
+let startY = 0;
+document.getElementById('detail-card').addEventListener('touchstart', e => {
+  startY = e.touches[0].clientY;
+}, { passive: true });
+
+document.getElementById('detail-card').addEventListener('touchend', e => {
+  const dy = e.changedTouches[0].clientY - startY;
+  if (dy > 60) closeCard();
+}, { passive: true });
+
+// ── WELCOME TOAST ─────────────────────────────────────────────────────────
+setTimeout(() => {
+  showToast('Toca un marcador para explorar 🦋');
+}, 800);
+</script>
+</body>
+</html>
